@@ -19,16 +19,16 @@ version 1.0
 
 workflow DeepVariant {
     input {
-        # reference genome & index (if available, generated otherwise)
+        # reference genome & index (if available; generated otherwise)
         File ref_fasta
         File? ref_fasta_idx
 
         # Genomic range(s) to call. Provide at most one of range or ranges_bed.
         # If neither is provided, calls the whole reference genome.
-        String? range       # e.g. chr12:111766922-111817529
+        String? range       # e.g. chr12:111760000-111820000
         File? ranges_bed
 
-        # Read alignments - bam & bai (bai auto-generated if omitted)
+        # Read alignments - bam & bai (bai generated if omitted)
         # The output vcf/gvcf filename is derived from the bam's.
         File bam
         File? bai
@@ -89,13 +89,14 @@ task samtools_faidx {
 
     command <<<
         set -euxo pipefail
-        curl -LSs --retry -O http://mirrors.kernel.org/ubuntu/pool/universe/s/samtools/samtools_1.9-4_amd64.deb
-        dpkg -i samtools*.deb
+        apt-get update && apt-get install -y samtools
         samtools faidx "~{fasta}"
+        mkdir out
+        mv "~{fasta}.fai" out
     >>>
 
     output {
-        File fai = "~{fasta}.fai"
+        File fai = glob("out/*.fai")[0]
     }
 
     runtime {
@@ -144,9 +145,7 @@ task make_examples {
         fi
 
         if [ -z "~{bai}" ]; then
-            # samtools deb from xenial base image of deepvariant-docker
-            curl -LSs --retry -O http://mirrors.kernel.org/ubuntu/pool/universe/s/samtools/samtools_0.1.19-1ubuntu1_amd64.deb > samtools.deb
-            dpkg -i samtools.deb
+            apt-get update && apt-get install -y samtools
             samtools index "~{bam}"
         fi
 
@@ -155,8 +154,8 @@ task make_examples {
         output_fn="examples/$output_name.tfrecord@$(nproc).gz"
         gvcf_fn="gvcf/$output_name.gvcf.tfrecord@$(nproc).gz"
 
-        seq 0 $(( `nproc` - 1 )) | NO_GCE_CHECK=True parallel --halt 2 -t --results logs/ \
-            "/opt/deepvariant/bin/make_examples --mode calling --ref ref.fasta --reads '~{bam}' --examples '$output_fn' --gvcf '$gvcf_fn' --task {} $range_arg $binsize_arg 2>&1" > /dev/null
+        seq 0 $(( `nproc` - 1 )) | NO_GCE_CHECK=True parallel --halt 2 -t \
+            "/opt/deepvariant/bin/make_examples --mode calling --ref '~{ref_fasta}' --reads '~{bam}' --examples '$output_fn' --gvcf '$gvcf_fn' --task {} $range_arg $binsize_arg 2>&1" > /dev/null
     >>>
 
     runtime {
@@ -165,9 +164,8 @@ task make_examples {
     }
 
     output {
-        Array[File]+ examples = glob("examples/*")
+        Array[File]+ examples = glob("examples/*.gz")
         Array[File]+ gvcf_tfrecords = glob("gvcf/*")
-        Array[File]+ logs = glob("logs/*")
     }
 }
 
@@ -183,8 +181,9 @@ task call_variants {
 
         n_examples=~{length(examples)}
         examples_dir=$(dirname "~{examples[0]}")
-        output_name=$(basename "~{examples[0]}" .tfrecord) # FIXME
+        output_name=$(basename "~{examples[0]}" | grep -oP '.+(?=\.tfrecord-\d+-of-\d+.gz)')
 
+        mkdir output
         NO_GCE_CHECK=True /opt/deepvariant/bin/call_variants \
             --outfile "output/$output_name.call_variants.tfrecord.gz" \
             --examples "$examples_dir/$output_name.tfrecord@$n_examples.gz" \
@@ -221,10 +220,11 @@ task postprocess_variants {
 
         mkdir gvcf output
         n_gvcf_tfrecords="~{length(gvcf_tfrecords)}"
+        gvcf_tfrecords_dir=$(dirname "~{gvcf_tfrecords[0]}")
         output_name=$(basename "~{call_variants_output}" .call_variants.tfrecord.gz)
         NO_GCE_CHECK=True /opt/deepvariant/bin/postprocess_variants \
             --ref "~{ref_fasta}" --infile "~{call_variants_output}" \
-            --nonvariant_site_tfrecord_path "gvcf/$output_name.gvcf.tfrecord@$n_gvcf_tfrecords.gz" \ FIXME
+            --nonvariant_site_tfrecord_path "$gvcf_tfrecords_dir/$output_name.gvcf.tfrecord@$n_gvcf_tfrecords.gz" \
             --outfile "output/$output_name.vcf" \
             --gvcf_outfile "output/$output_name.gvcf"
     >>>
@@ -245,15 +245,16 @@ task bgzip {
         File file
     }
 
+    String filename = basename(file)
+
     command <<<
         set -euxo pipefail
-        curl -LSs --retry -O http://mirrors.kernel.org/ubuntu/pool/universe/h/htslib/tabix_1.9-10_amd64.deb
-        dpkg -i tabix*.deb
-        bgzip -@ 4 -c "~{file}" > "~{file}.gz"
+        apt-get update && apt-get install -y tabix
+        bgzip -@ 4 -c "~{file}" > "~{filename}.gz"
     >>>
 
     output {
-        File file_gz = "~{file}.gz"
+        File file_gz = "~{filename}.gz"
     }
 
     runtime {
