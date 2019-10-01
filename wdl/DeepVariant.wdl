@@ -32,6 +32,9 @@ workflow DeepVariant {
         # The output vcf/gvcf filename is derived from the bam's.
         File bam
         File? bai
+
+        # gVCF advanced setting
+        Int? gvcf_gq_binsize
     }
 
     if (!defined(ref_fasta_idx)) {
@@ -43,6 +46,14 @@ workflow DeepVariant {
     }
     File ref_fasta_idx2 = select_first([ref_fasta_idx, samtools_faidx.fai])
 
+    if (!defined(bai)) {
+        call samtools_index {
+            input:
+                bam = bam
+        }
+    }
+    File bai2 = select_first([bai, samtools_index.bai])
+
     call make_examples {
         input:
             ref_fasta = ref_fasta,
@@ -50,7 +61,8 @@ workflow DeepVariant {
             range = range,
             ranges_bed = ranges_bed,
             bam = bam,
-            bai = bai
+            bai = bai2,
+            gvcf_gq_binsize = gvcf_gq_binsize
     }
 
     call call_variants {
@@ -91,16 +103,35 @@ task samtools_faidx {
         set -euxo pipefail
         apt-get update && apt-get install -y samtools
         samtools faidx "~{fasta}"
-        mkdir out
-        mv "~{fasta}.fai" out
     >>>
 
     output {
-        File fai = glob("out/*.fai")[0]
+        File fai = "~{fasta}.fai"
     }
 
     runtime {
         docker: "ubuntu:disco"
+    }
+}
+
+task samtools_index {
+    input {
+        File bam
+    }
+
+    command <<<
+        set -euxo pipefail
+        apt-get update && apt-get install -y samtools
+        samtools index -@ 4 "~{bam}"
+    >>>
+
+    output {
+        File bai = "~{bam}.bai"
+    }
+
+    runtime {
+        docker: "ubuntu:disco"
+        cpu: 4
     }
 }
 
@@ -111,9 +142,9 @@ task make_examples {
         File ref_fasta
         File ref_fasta_idx
 
-        # bam & bai (bai auto-generated if omitted)
+        # bam & bai
         File bam
-        File? bai
+        File bai
 
         # Genomic range(s) to run on. Provide at most one of range or ranges_bed.
         # If neither is provided, calls the whole reference genome.
@@ -139,15 +170,6 @@ task make_examples {
 
         set -euxo pipefail
         export SHELL=/bin/bash
-
-        if [ ! -f "~{ref_fasta}.fai" ]; then
-            cp "~{ref_fasta_idx}" "~{ref_fasta}.fai"
-        fi
-
-        if [ -z "~{bai}" ]; then
-            apt-get update && apt-get install -y samtools
-            samtools index "~{bam}"
-        fi
 
         output_name=$(basename "~{bam}" .bam)
         mkdir examples/ gvcf/ logs/
@@ -213,10 +235,6 @@ task postprocess_variants {
 
     command <<<
         set -euxo pipefail
-
-        if [ ! -f "~{ref_fasta}.fai" ]; then
-            cp "~{ref_fasta_idx}" "~{ref_fasta}.fai"
-        fi
 
         mkdir gvcf output
         n_gvcf_tfrecords="~{length(gvcf_tfrecords)}"
