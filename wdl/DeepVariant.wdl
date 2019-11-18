@@ -1,5 +1,5 @@
 # Use DeepVariant to generate VCF & gVCF for one sample
-# ref: https://github.com/google/deepvariant/blob/r0.8/docs/deepvariant-gvcf-support.md
+# ref: https://github.com/google/deepvariant/blob/r0.9/docs/deepvariant-gvcf-support.md
 #
 #              +----------------------------------------------------------------------------+
 #              |                                                                            |
@@ -27,6 +27,9 @@ workflow DeepVariant {
         # If neither is provided, calls the whole reference genome.
         String? range       # e.g. chr12:111760000-111820000
         File? ranges_bed
+
+        # DeepVariant model type -- wgs, wes, or pacbio
+        String model_type = "wgs"
 
         # Read alignments - bam & bai (bai generated if omitted)
         # The output vcf/gvcf filename is derived from the bam's.
@@ -67,7 +70,8 @@ workflow DeepVariant {
 
     call call_variants {
         input:
-            examples = make_examples.examples
+            examples = make_examples.examples,
+            model_type = model_type
     }
 
     call postprocess_variants {
@@ -98,19 +102,15 @@ task samtools_faidx {
     input {
         File fasta
     }
-
     command <<<
         set -euxo pipefail
-        apt-get update && apt-get install -y samtools
         samtools faidx "~{fasta}"
     >>>
-
     output {
         File fai = "~{fasta}.fai"
     }
-
     runtime {
-        docker: "ubuntu:disco"
+        docker: "biocontainers/samtools:v1.9-4-deb_cv1"
     }
 }
 
@@ -118,19 +118,15 @@ task samtools_index {
     input {
         File bam
     }
-
     command <<<
         set -euxo pipefail
-        apt-get update && apt-get install -y samtools
         samtools index -@ 4 "~{bam}"
     >>>
-
     output {
         File bai = "~{bam}.bai"
     }
-
     runtime {
-        docker: "ubuntu:disco"
+        docker: "biocontainers/samtools:v1.9-4-deb_cv1"
         cpu: 4
     }
 }
@@ -181,8 +177,8 @@ task make_examples {
     >>>
 
     runtime {
-        docker: "gcr.io/deepvariant-docker/deepvariant:0.8.0"
-        cpu: "64"
+        docker: "gcr.io/deepvariant-docker/deepvariant:0.9.0"
+        cpu: 64
     }
 
     output {
@@ -195,7 +191,7 @@ task make_examples {
 task call_variants {
     input {
         Array[File]+ examples
-        String model_type = "wgs" # "wgs", "wes", or "pacbio"
+        String model_type
     }
 
     command <<<
@@ -213,8 +209,8 @@ task call_variants {
     >>>
 
     runtime {
-        docker: "gcr.io/deepvariant-docker/deepvariant:0.8.0"
-        cpu: "64"
+        docker: "gcr.io/deepvariant-docker/deepvariant:0.9.0"
+        cpu: 64
     }
 
     output {
@@ -248,7 +244,7 @@ task postprocess_variants {
     >>>
 
     runtime {
-        docker: "gcr.io/deepvariant-docker/deepvariant:0.8.0"
+        docker: "gcr.io/deepvariant-docker/deepvariant:0.9.0"
         cpu: 2
     }
 
@@ -262,21 +258,15 @@ task bgzip {
     input {
         File file
     }
-
     String filename = basename(file)
-
     command <<<
-        set -euxo pipefail
-        apt-get update && apt-get install -y tabix
         bgzip -@ 4 -c "~{file}" > "~{filename}.gz"
     >>>
-
     output {
         File file_gz = "~{filename}.gz"
     }
-
     runtime {
-        docker: "ubuntu:disco"
+        docker: "biocontainers/tabix:v1.9-11-deb_cv1"
         cpu: 4
     }
 }

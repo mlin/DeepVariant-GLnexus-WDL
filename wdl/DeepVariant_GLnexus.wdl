@@ -38,14 +38,18 @@ workflow DeepVariant_GLnexus {
         File ref_fasta
         File? ref_fasta_idx
 
-        # DeepVariant advanced settings
+        # DeepVariant settings
+        String model_type = "wgs"
         Int? gvcf_gq_binsize
+
+        # GLnexus settings
+        String glnexus_config = "DeepVariantWGS"
 
         # pVCF output name
         String output_name
-
-        File? _file_none
     }
+
+    File? _file_none
 
     if (!defined(ref_fasta_idx)) {
         # index ref_fasta if needed
@@ -62,6 +66,7 @@ workflow DeepVariant_GLnexus {
             ref_fasta_idx = ref_fasta_idx2,
             range = range,
             ranges_bed = ranges_bed,
+            model_type = model_type,
             gvcf_gq_binsize = gvcf_gq_binsize,
             bam = bam[i],
             bai = if defined(bai) then bai[i] else _file_none
@@ -72,7 +77,7 @@ workflow DeepVariant_GLnexus {
         gvcf = dv.gvcf_gz,
         range = range,
         ranges_bed = ranges_bed,
-        config = "DeepVariant",
+        config = glnexus_config,
         output_name = output_name
     }
 
@@ -84,11 +89,13 @@ workflow DeepVariant_GLnexus {
 }
 
 task GLnexus {
-    Array[File]+ gvcf
-    String? range
-    File? ranges_bed
-    String config
-    String output_name
+    input {
+        Array[File]+ gvcf
+        String? range
+        File? ranges_bed
+        String config
+        String output_name
+    }
 
     command <<<
         set -euxo pipefail
@@ -104,9 +111,9 @@ task GLnexus {
     >>>
 
     runtime {
-        docker: "quay.io/mlin/glnexus:v1.2.0-pre.0-2-gd7235e6"
+        docker: "quay.io/mlin/glnexus:v1.2.2"
         disks: "local-disk 64 HDD"
-        cpu: "16"
+        cpu: 16
     }
 
     output {

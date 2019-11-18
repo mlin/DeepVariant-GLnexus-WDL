@@ -32,6 +32,11 @@ workflow fetch {
         "ERR3239997/NA20845"
     ]
 
+    call download_dummy {
+        input:
+            uri = "https://s3.amazonaws.com/1000genomes/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
+    }
+
     call samtools_slice_1000G_bam {
         input:
             ERR_slash_sample = samples,
@@ -39,35 +44,19 @@ workflow fetch {
             region_name = "ALDH2"
     }
 
-    call curl as curl_ref_fasta {
-        input:
-            url = "https://s3.amazonaws.com/1000genomes/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa"
-    }
-
     output {
-        File ref_fasta = curl_ref_fasta.file
+        File ref_fasta = download_dummy.file
         Array[File] bams = samtools_slice_1000G_bam.bams
     }
 }
 
-task curl {
+task download_dummy {
     input {
-        String url
+        File uri
     }
-
-    command <<<
-        apt-get update && apt-get install -y curl
-        mkdir file
-        cd file
-        curl --retry 3 -Lss -O "~{url}"
-    >>>
-
+    command {}
     output {
-        File file = glob("file/*")[0]
-    }
-
-    runtime {
-        docker: "ubuntu:disco"
+        File file = uri
     }
 }
 
@@ -80,7 +69,7 @@ task samtools_slice_1000G_bam {
 
     command <<<
         set -euxo pipefail
-        apt-get update && apt-get install -y samtools parallel
+        apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y samtools parallel
 
         cat << "EOF" > do1
         sample=$(basename "$1")
@@ -101,7 +90,8 @@ task samtools_slice_1000G_bam {
     }
 
     runtime {
-        docker: "ubuntu:disco"
-        cpu: 7
+        docker: "ubuntu:19.10"
+        cpu: 16
+        maxRetries: 2
     }
 }
