@@ -49,7 +49,7 @@ workflow DeepVariant_GLnexus {
         String output_name
     }
 
-    File? _file_none
+    File? file_none_
 
     if (!defined(ref_fasta_idx)) {
         # index ref_fasta if needed
@@ -69,7 +69,7 @@ workflow DeepVariant_GLnexus {
             model_type = model_type,
             gvcf_gq_binsize = gvcf_gq_binsize,
             bam = bam[i],
-            bai = if defined(bai) then bai[i] else _file_none
+            bai = if defined(bai) then bai[i] else file_none_
         }
     }
 
