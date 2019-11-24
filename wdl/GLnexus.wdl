@@ -1,0 +1,46 @@
+version 1.0
+
+task GLnexus {
+    input {
+        Array[File]+ gvcf
+        String output_name
+
+        String config = "DeepVariantWGS"
+        File? config_yml
+
+        String? range
+        File? ranges_bed
+
+        Int cpu = 16
+        Int memoryGB = cpu*4
+        Int diskGB = 3*floor(size(gvcf, "GB"))+1
+    }
+
+    command <<<
+        set -euxo pipefail
+
+        bed_arg=""
+        if [ -n "~{ranges_bed}" ]; then
+            bed_arg="--bed ~{ranges_bed}"
+        elif [ -n "~{range}" ]; then
+            echo "~{range}" | tr :- '\t' | tr -d , > range.bed
+            bed_arg="--bed range.bed"
+        fi
+
+        glnexus_cli \
+            --config "~{if defined(config_yml) then config_yml else config}" \
+            --list $bed_arg "~{write_lines(gvcf)}" \
+            | bcftools view - | bgzip -@ 4 -c > "~{output_name}.vcf.gz"
+    >>>
+
+    runtime {
+        docker: "quay.io/mlin/glnexus:v1.2.2"
+        cpu: cpu
+        memory: "${memoryGB}G"
+        disks: "local-disk ~{diskGB} HDD"
+    }
+
+    output {
+        File pvcf_gz = "${output_name}.vcf.gz"
+    }
+}

@@ -1,5 +1,5 @@
 # Use DeepVariant to generate VCF & gVCF for one sample
-# ref: https://github.com/google/deepvariant/blob/r0.5/docs/deepvariant-gvcf-support.md
+# ref: https://github.com/google/deepvariant/blob/r0.9/docs/deepvariant-gvcf-support.md
 #
 #              +----------------------------------------------------------------------------+
 #              |                                                                            |
@@ -15,166 +15,204 @@
 #              +----------------------------------|-----------------------------------------+
 #                                                 |
 #                                        DeepVariant Model
+version 1.0
 
 workflow DeepVariant {
-    # reference genome
-    File ref_fasta_gz
+    input {
+        # reference genome & index (if available; generated otherwise)
+        File ref_fasta
+        File? ref_fasta_idx
 
-    # Genomic range(s) to call. Provide at most one of range or ranges_bed.
-    # If neither is provided, calls the whole reference genome.
-    String? range       # e.g. chr12:111766922-111817529
-    File? ranges_bed
+        # Genomic range(s) to call. Provide at most one of range or ranges_bed.
+        # If neither is provided, calls the whole reference genome.
+        String? range       # e.g. chr12:111760000-111820000
+        File? ranges_bed
 
-    # Read alignments - bam & bai (bai auto-generated if omitted)
-    # The output vcf/gvcf filename is derived from the bam's.
-    File bam
-    File? bai
+        # DeepVariant model type -- wgs, wes, or pacbio
+        String model_type = "wgs"
 
-    # DeepVariant model files (with no folder component)
-    File model_tar
+        # Read alignments - bam & bai (bai generated if omitted)
+        # The output vcf/gvcf filename is derived from the bam's.
+        File bam
+        File? bai
 
-    # Advanced setting for DeepVariant make_examples
-    Int? gvcf_gq_binsize
+        String output_name = basename(bam, ".bam")
 
-    # DeepVariant docker image tag
-    # c.f. https://github.com/google/deepvariant/blob/master/docs/deepvariant-docker.md
-    String? deepvariant_docker
-    String deepvariant_docker_default = select_first([deepvariant_docker,"gcr.io/deepvariant-docker/deepvariant:0.7.0"])
+        Int shards = 64
 
-    call make_examples { input:
-        ref_fasta_gz = ref_fasta_gz,
-        range = range,
-        ranges_bed = ranges_bed,
-        bam = bam,
-        bai = bai,
-        gvcf_gq_binsize = gvcf_gq_binsize,
-        deepvariant_docker = deepvariant_docker_default
+        # gVCF advanced setting
+        Int? gvcf_gq_binsize
     }
 
-    call call_variants { input:
-        model_tar = model_tar,
-        examples_tar = make_examples.examples_tar,
-        deepvariant_docker = deepvariant_docker_default
+    if (!defined(ref_fasta_idx)) {
+        # index ref_fasta if needed
+        call samtools_faidx {
+            input:
+                fasta = ref_fasta
+        }
+    }
+    File ref_fasta_idx2 = select_first([ref_fasta_idx, samtools_faidx.fai])
+
+    if (!defined(bai)) {
+        call samtools_index {
+            input:
+                bam = bam
+        }
+    }
+    File bai2 = select_first([bai, samtools_index.bai])
+
+    call make_examples {
+        input:
+            ref_fasta = ref_fasta,
+            ref_fasta_idx = ref_fasta_idx2,
+            range = range,
+            ranges_bed = ranges_bed,
+            bam = bam,
+            bai = bai2,
+            output_name = output_name,
+            shards = shards,
+            gvcf_gq_binsize = gvcf_gq_binsize
     }
 
-    call postprocess_variants { input:
-        ref_fasta_gz = ref_fasta_gz,
-        call_variants_output = call_variants.call_variants_output,
-        gvcf_tfrecords_tar = make_examples.gvcf_tfrecords_tar,
-        deepvariant_docker = deepvariant_docker_default
+    call call_variants {
+        input:
+            examples = make_examples.examples,
+            output_name = output_name,
+            model_type = model_type
+    }
+
+    call postprocess_variants {
+        input:
+            ref_fasta = ref_fasta,
+            ref_fasta_idx = ref_fasta_idx2,
+            output_name = output_name,
+            call_variants_output = call_variants.call_variants_output,
+            gvcf_tfrecords = make_examples.gvcf_tfrecords
+    }
+
+    call bgzip as bgzip_vcf {
+        input:
+            file = postprocess_variants.vcf
+    }
+
+    call bgzip as bgzip_gvcf {
+        input:
+            file = postprocess_variants.gvcf
     }
 
     output {
-        File vcf_gz = postprocess_variants.vcf_gz
-        File gvcf_gz = postprocess_variants.gvcf_gz
+        File vcf_gz = bgzip_vcf.file_gz
+        File gvcf_gz = bgzip_gvcf.file_gz
+    }
+}
+
+task samtools_faidx {
+    input {
+        File fasta
+    }
+    command <<<
+        set -euxo pipefail
+        samtools faidx "~{fasta}"
+    >>>
+    output {
+        File fai = "~{fasta}.fai"
+    }
+    runtime {
+        docker: "biocontainers/samtools:v1.9-4-deb_cv1"
+    }
+}
+
+task samtools_index {
+    input {
+        File bam
+    }
+    command <<<
+        set -euxo pipefail
+        samtools index -@ 4 "~{bam}"
+    >>>
+    output {
+        File bai = "~{bam}.bai"
+    }
+    runtime {
+        docker: "biocontainers/samtools:v1.9-4-deb_cv1"
+        cpu: 4
     }
 }
 
 # DeepVariant make_examples
 task make_examples {
-    File ref_fasta_gz
+    input {
+        # reference genome
+        File ref_fasta
+        File ref_fasta_idx
 
-    # bam & bai (bai auto-generated if omitted)
-    File bam
-    File? bai
+        # bam & bai
+        File bam
+        File bai
 
-    # Genomic range(s) to run on. Provide at most one of range or ranges_bed.
-    # If neither is provided, calls the whole reference genome.
-    String? range       # e.g. chr12:111766922-111817529
-    File? ranges_bed
+        String output_name
 
-    Int? gvcf_gq_binsize
-    
-    String deepvariant_docker
+        # Genomic range(s) to run on. Provide at most one of range or ranges_bed.
+        # If neither is provided, calls the whole reference genome.
+        String? range       # e.g. chr12:111766922-111817529
+        File? ranges_bed
 
-    parameter_meta {
-        ref_fasta_gz: "stream"
+        # advanced gVCF setting
+        Int? gvcf_gq_binsize
+
+        Int shards = 64
     }
 
+    String regions_arg = if defined(ranges_bed) then "~{'--regions ' + ranges_bed}" else "~{'--regions ' + range}"
+
     command <<<
-        range_arg=""
-        if [ -n "${range}" ]; then
-            range_arg="--regions ${range}"
-        fi
-        if [ -n "${ranges_bed}" ]; then
-            range_arg="--regions ${ranges_bed}"
-        fi
-        binsize_arg=""
-        if [ -n "${gvcf_gq_binsize}" ]; then
-            binsize_arg="--gvcf_gq-binsize ${gvcf_gq_binsize}"
-        fi
-
-        set -ex -o pipefail
+        set -euxo pipefail
         export SHELL=/bin/bash
-        apt-get update -qq && apt-get install -y -qq samtools
-        (zcat "${ref_fasta_gz}" > ref.fasta && samtools faidx ref.fasta) &
-        output_name=$(basename "${bam}" .bam)
-        mv "${bam}" input.bam
-        if [ -n "${bai}" ]; then
-            mv "${bai}" input.bam.bai
-        else
-            samtools index "input.bam"
-        fi
-        wait -n
-        ls -lh
 
-        mkdir examples/ gvcf/ logs/
-        output_fn="examples/$output_name.tfrecord@$(nproc).gz"
-        gvcf_fn="gvcf/$output_name.gvcf.tfrecord@$(nproc).gz"
+        mkdir examples/ gvcf/
+        output_fn="examples/~{output_name}.tfrecord@~{shards}.gz"
+        gvcf_fn="gvcf/~{output_name}.gvcf.tfrecord@~{shards}.gz"
 
-        seq 0 $(( `nproc` - 1 )) | NO_GCE_CHECK=True parallel --halt 2 -t --results logs/ \
-            "/opt/deepvariant/bin/make_examples --mode calling --ref ref.fasta --reads input.bam --examples '$output_fn' --gvcf '$gvcf_fn' --task {} $range_arg $binsize_arg 2>&1" > /dev/null
-
-        mkdir tar/
-        tar -cvzf "tar/$output_name.logs.tar.gz" -C logs/ .
-        tar -cvf "tar/$output_name.examples.tar" -C examples/ .
-        tar -cvf "tar/$output_name.gvcf_tfrecords.tar" -C gvcf/ .
+        seq 0 ~{shards-1} | NO_GCE_CHECK=True parallel --halt 2 -t \
+            "/opt/deepvariant/bin/make_examples --mode calling --ref '~{ref_fasta}' --reads '~{bam}' --examples '$output_fn' --gvcf '$gvcf_fn' --task {} ~{regions_arg} ~{'--gvcf_gq_binsize ' + gvcf_gq_binsize}"
     >>>
 
     runtime {
-        docker: "${deepvariant_docker}"
-        cpu: "32"
+        docker: "gcr.io/deepvariant-docker/deepvariant:0.9.0"
+        cpu: shards
     }
 
     output {
-        File examples_tar = glob("tar/*.examples.tar")[0]
-        File gvcf_tfrecords_tar = glob("tar/*.gvcf_tfrecords.tar")[0]
-        File logs_tar_gz = glob("tar/*.logs.tar.gz")[0]
+        Array[File]+ examples = glob("examples/*.gz")
+        Array[File]+ gvcf_tfrecords = glob("gvcf/*")
     }
 }
 
 # DeepVariant call_variants (CPU)
 task call_variants {
-    # DeepVariant model files (with no folder component)
-    File model_tar
-    File examples_tar
-    String deepvariant_docker
+    input {
+        Array[File]+ examples
+        String output_name
+        String model_type
 
-    parameter_meta {
-        examples_tar: "stream"
-        model_tar: "stream"
+        Int cpu = length(examples)
     }
 
     command <<<
-        set -ex -o pipefail
+        set -euxo pipefail
 
-        tar xvf "${model_tar}" &
-        mkdir examples output
-        tar xvf "${examples_tar}" -C examples/
-        wait -n
+        examples_dir=$(dirname "~{examples[0]}")
 
-        n_examples=$(find examples/ -type f -name "*.gz" | wc -l)
-        output_name=$(basename "${examples_tar}" .examples.tar)
-
+        mkdir output
         NO_GCE_CHECK=True /opt/deepvariant/bin/call_variants \
-            --outfile "output/$output_name.call_variants.tfrecord.gz" \
-            --examples "examples/$output_name.tfrecord@$n_examples.gz" \
-            --checkpoint model.ckpt
+            --outfile "output/~{output_name}.call_variants.tfrecord.gz" \
+            --examples "$examples_dir/~{output_name}.tfrecord@~{length(examples)}.gz" \
+            --checkpoint "/opt/models/~{model_type}/model.ckpt"
     >>>
 
     runtime {
-        docker: "${deepvariant_docker}"
-        cpu: "32"
+        docker: "gcr.io/deepvariant-docker/deepvariant:0.9.0"
+        cpu: cpu
     }
 
     output {
@@ -184,48 +222,52 @@ task call_variants {
 
 # DeepVariant postprocess_variants
 task postprocess_variants {
-    File ref_fasta_gz
-    File gvcf_tfrecords_tar
-    File call_variants_output
-    String deepvariant_docker
+    input {
+        File ref_fasta
+        File ref_fasta_idx
 
-    parameter_meta {
-        ref_fasta_gz: "stream"
-        gvcf_tfrecords_tar: "stream"
+        Array[File]+ gvcf_tfrecords
+        
+        File call_variants_output
+        String output_name
     }
 
     command <<<
-        set -ex -o pipefail
-        apt-get update -qq && apt-get install -y -qq samtools wget
-        # download a multithreaded version of the tabix bgzip utility
-        wget --quiet -O bgzip "https://github.com/dnanexus-rnd/GLnexus/blob/master/cli/dxapplet/resources/usr/local/bin/bgzip?raw=true"
-        chmod +x bgzip
+        set -euxo pipefail
 
-        zcat "${ref_fasta_gz}" > ref.fasta
-        samtools faidx ref.fasta
-
-        mkdir gvcf output
-        tar xvf "${gvcf_tfrecords_tar}" -C gvcf/
-        n_gvcf_tfrecords=$(find gvcf/ -type f | wc -l)
-        output_name=$(basename "${call_variants_output}" .call_variants.tfrecord.gz)
+        gvcf_tfrecords_dir=$(dirname "~{gvcf_tfrecords[0]}")
+        mkdir output
         NO_GCE_CHECK=True /opt/deepvariant/bin/postprocess_variants \
-            --ref ref.fasta --infile "${call_variants_output}" \
-            --nonvariant_site_tfrecord_path "gvcf/$output_name.gvcf.tfrecord@$n_gvcf_tfrecords.gz" \
-            --outfile "output/$output_name.vcf" \
-            --gvcf_outfile "output/$output_name.gvcf"
-
-        ./bgzip -@ $(nproc) output/*.vcf &
-        ./bgzip -@ $(nproc) output/*.gvcf
-        wait -n
+            --ref "~{ref_fasta}" --infile "~{call_variants_output}" \
+            --nonvariant_site_tfrecord_path "$gvcf_tfrecords_dir/~{output_name}.gvcf.tfrecord@~{length(gvcf_tfrecords)}.gz" \
+            --outfile "output/~{output_name}.vcf" \
+            --gvcf_outfile "output/~{output_name}.gvcf"
     >>>
 
     runtime {
-        docker: "${deepvariant_docker}"
-        cpu: "8"
+        docker: "gcr.io/deepvariant-docker/deepvariant:0.9.0"
+        cpu: 2
     }
 
     output {
-        File vcf_gz = glob("output/*.vcf.gz")[0]
-        File gvcf_gz = glob("output/*.gvcf.gz")[0]
+        File vcf = glob("output/*.vcf")[0]
+        File gvcf = glob("output/*.gvcf")[0]
+    }
+}
+
+task bgzip {
+    input {
+        File file
+    }
+    String filename = basename(file)
+    command <<<
+        bgzip -@ 4 -c "~{file}" > "~{filename}.gz"
+    >>>
+    output {
+        File file_gz = "~{filename}.gz"
+    }
+    runtime {
+        docker: "biocontainers/tabix:v1.9-11-deb_cv1"
+        cpu: 4
     }
 }
