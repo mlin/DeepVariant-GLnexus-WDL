@@ -11,6 +11,8 @@ task GLnexus {
         String? range
         File? ranges_bed
 
+        Boolean squeeze = false
+
         Int cpu = 16
         Int memoryGB = cpu*4
         Int diskGB = 3*floor(size(gvcf, "GB"))+1
@@ -27,16 +29,24 @@ task GLnexus {
             bed_arg="--bed range.bed"
         fi
 
+        squeeze_cmd="cat"
+        squeeze_arg=""
+        if [ "~{squeeze}" == "true" ]; then
+            # TODO: when spvcf is baked-in to GLnexus docker image
+            # squeeze_cmd="spvcf squeeze"
+            squeeze_arg="--squeeze"
+        fi
+
         glnexus_cli \
             --config "~{if defined(config_yml) then config_yml else config}" \
-            --list $bed_arg "~{write_lines(gvcf)}" \
-            | bcftools view - | bgzip -@ 4 -c > "~{output_name}.vcf.gz"
+            --list $bed_arg $squeeze_arg "~{write_lines(gvcf)}" \
+            | bcftools view - | $squeeze_cmd | bgzip -@ 4 -c > "~{output_name}.vcf.gz"
     >>>
 
     runtime {
         docker: "quay.io/mlin/glnexus:v1.2.2"
         cpu: cpu
-        memory: "${memoryGB}G"
+        memory: "~{memoryGB}G"
         disks: "local-disk ~{diskGB} HDD"
     }
 
