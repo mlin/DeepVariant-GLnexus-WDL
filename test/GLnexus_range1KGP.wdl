@@ -53,9 +53,9 @@ task tabix_slice_1KGP_gVCF {
         # tabix' gs:// driver unfortunately seems prone to sporadic, premature truncation.
         # therefore, we'll fetch each slice twice and check for identical output.
         # feels bad man...
-        timeout "~{timeout}" tabix -h "gs://brain-genomics-public/research/cohort/1KGP/dv_vcf/v1/~{sample}.dv0.8.0.g.vcf.gz" "~{range}" > /tmp/slice1 & pid=$!
+        timeout "~{timeout}" tabix -h "gs://brain-genomics-public/research/cohort/1KGP/dv_vcf/v1/~{sample}.dv0.8.0.g.vcf.gz" "~{range}" > /tmp/slice1
+        rm -f *.tbi
         timeout "~{timeout}" tabix -h "gs://brain-genomics-public/research/cohort/1KGP/dv_vcf/v1/~{sample}.dv0.8.0.g.vcf.gz" "~{range}" > /tmp/slice2
-        wait $pid
         cmp -s /tmp/slice1 /tmp/slice2
         bgzip -c /tmp/slice1 > "~{outfile}"
     >>>
