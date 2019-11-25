@@ -1,5 +1,6 @@
 {
     "GLnexus_range1KGP.range": "chr17",
+    "GLnexus_range1KGP.slicer.timeout": "10m",
     "GLnexus_range1KGP.GLnexus.cpu": 64,
     "GLnexus_range1KGP.samples":
 ["HG00096",

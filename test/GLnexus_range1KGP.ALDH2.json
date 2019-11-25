@@ -1,6 +1,7 @@
 {
     "GLnexus_range1KGP.range": "chr12:111760000-111820000",
     "GLnexus_range1KGP.range_name": "ALDH2",
+    "GLnexus_range1KGP.slicer.timeout": "5m",
     "GLnexus_range1KGP.samples":
 ["HG00096",
 "HG00097",
