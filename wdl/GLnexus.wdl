@@ -26,14 +26,16 @@ task GLnexus {
             bed_arg="--bed ~{ranges_bed}"
         elif [ -n "~{range}" ]; then
             echo "~{range}" | tr :- '\t' | tr -d , > range.bed
+            if [ -z $(cut -f 2,3 range.bed) ]; then
+                echo -e "~{range}\t1\t999999999" > range.bed
+            fi
             bed_arg="--bed range.bed"
         fi
 
         squeeze_cmd="cat"
         squeeze_arg=""
         if [ "~{squeeze}" == "true" ]; then
-            # TODO: when spvcf is baked-in to GLnexus docker image
-            # squeeze_cmd="spvcf squeeze"
+            squeeze_cmd="spvcf squeeze"
             squeeze_arg="--squeeze"
         fi
 
@@ -44,7 +46,7 @@ task GLnexus {
     >>>
 
     runtime {
-        docker: "quay.io/mlin/glnexus:v1.2.2"
+        docker: "quay.io/mlin/glnexus:v1.2.2-7-ge89e4e4"
         cpu: cpu
         memory: "~{memoryGB}G"
         disks: "local-disk ~{diskGB} HDD"
