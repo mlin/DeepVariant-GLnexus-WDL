@@ -27,7 +27,7 @@ task GLnexus {
         elif [ -n "~{range}" ]; then
             echo "~{range}" | tr :- '\t' | tr -d , > range.bed
             if [ -z "$(cut -sf 2,3 range.bed)" ]; then
-                echo -e "~{range}\t1\t999999999" > range.bed
+                echo -e "~{range}\t0\t999999999" > range.bed
             fi
             bed_arg="--bed range.bed"
         fi
