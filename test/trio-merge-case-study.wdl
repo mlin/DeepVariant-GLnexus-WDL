@@ -25,7 +25,7 @@ workflow trio_merge_case_study {
             bai = bais,
             ranges_bed = targets_bed,
             ref_fasta = ref.uncompressed,
-            model_type="WES",
+            model_type="wes",
             glnexus_config="DeepVariantWES",
             output_name="AshkenaziTrio"
     }
