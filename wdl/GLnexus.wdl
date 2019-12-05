@@ -14,7 +14,7 @@ task GLnexus {
         Boolean squeeze = false
 
         Int cpu = 16
-        Int memoryGB = cpu*4
+        Int memoryGB = cpu*3
         Int diskGB = 3*floor(size(gvcf, "GB"))+1
     }
 
@@ -42,6 +42,7 @@ task GLnexus {
         glnexus_cli \
             --config "~{if defined(config_yml) then config_yml else config}" \
             --list $bed_arg $squeeze_arg "~{write_lines(gvcf)}" \
+            --threads ~{cpu} --mem-gbytes ~{memoryGB} \
             | bcftools view - | $squeeze_cmd | bgzip -@ 4 -c > "~{output_name}.vcf.gz"
     >>>
 
