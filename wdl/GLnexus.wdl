@@ -21,6 +21,9 @@ task GLnexus {
     command <<<
         set -euxo pipefail
 
+        outdir=$(pwd)
+        cd $(mktemp -d)
+
         bed_arg=""
         if [ -n "~{ranges_bed}" ]; then
             bed_arg="--bed ~{ranges_bed}"
@@ -43,11 +46,11 @@ task GLnexus {
             --config "~{if defined(config_yml) then config_yml else config}" \
             --list $bed_arg $squeeze_arg "~{write_lines(gvcf)}" \
             --threads ~{cpu} --mem-gbytes ~{memoryGB} \
-            | bcftools view - | $squeeze_cmd | bgzip -@ 4 -c > "~{output_name}.vcf.gz"
+            | bcftools view - | $squeeze_cmd | bgzip -@ 4 -c > "${outdir}/~{output_name}.vcf.gz"
     >>>
 
     runtime {
-        docker: "quay.io/mlin/glnexus:v1.2.2-8-g3f008a1"
+        docker: "quay.io/mlin/glnexus:v1.2.2-9-g611f1c8"
         cpu: cpu
         memory: "~{memoryGB}G"
         disks: "local-disk ~{diskGB} HDD"
