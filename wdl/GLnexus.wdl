@@ -14,12 +14,15 @@ task GLnexus {
         Boolean squeeze = false
 
         Int cpu = 16
-        Int memoryGB = cpu*4
+        Int memoryGB = cpu*3
         Int diskGB = 3*floor(size(gvcf, "GB"))+1
     }
 
     command <<<
         set -euxo pipefail
+
+        outdir=$(pwd)
+        cd $(mktemp -d)
 
         bed_arg=""
         if [ -n "~{ranges_bed}" ]; then
@@ -42,11 +45,12 @@ task GLnexus {
         glnexus_cli \
             --config "~{if defined(config_yml) then config_yml else config}" \
             --list $bed_arg $squeeze_arg "~{write_lines(gvcf)}" \
-            | bcftools view - | $squeeze_cmd | bgzip -@ 4 -c > "~{output_name}.vcf.gz"
+            --threads ~{cpu} --mem-gbytes ~{memoryGB} \
+            | bcftools view - | $squeeze_cmd | bgzip -@ 4 -c > "${outdir}/~{output_name}.vcf.gz"
     >>>
 
     runtime {
-        docker: "quay.io/mlin/glnexus:v1.2.2-7-ge89e4e4"
+        docker: "quay.io/mlin/glnexus:v1.2.3"
         cpu: cpu
         memory: "~{memoryGB}G"
         disks: "local-disk ~{diskGB} HDD"
