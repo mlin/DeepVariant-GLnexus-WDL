@@ -50,7 +50,7 @@ task GLnexus {
     >>>
 
     runtime {
-        docker: "quay.io/mlin/glnexus:v1.2.3"
+        docker: "quay.io/mlin/glnexus:v1.2.6"
         cpu: cpu
         memory: "~{memoryGB}G"
         disks: "local-disk ~{diskGB} HDD"
