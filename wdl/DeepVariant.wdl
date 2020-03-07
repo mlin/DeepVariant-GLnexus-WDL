@@ -38,7 +38,7 @@ workflow DeepVariant {
 
         String output_name = basename(bam, ".bam")
 
-        Int shards = 64
+        Int shards = 32
 
         # gVCF advanced setting
         Int? gvcf_gq_binsize

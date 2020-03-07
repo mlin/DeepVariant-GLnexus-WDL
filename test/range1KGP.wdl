@@ -10,6 +10,7 @@ workflow range1KGP {
         # ERR ID and sample, for constructing CRAM file URI
         # example: "ERR3240114/HG00096"
         # table from which these can be derived: http://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/1000G_2504_high_coverage.sequence.index
+        # e.g. grep -v ^\# 1000G_2504_high_coverage.sequence.index | cut -f3,10 --output-delimiter / | awk '{printf("\"%s\",\n",$0)}'
         Array[String]+ ERR_slash_sample
 
         # GRCh38 reference
@@ -58,10 +59,11 @@ task samtools_slice_1000G_bam {
         String range_name
 
         String timeout = "1h"
-        Int cpu = 16
+        Int cpu = 32
     }
 
-    Int P = if cpu >= 4 then cpu/4 else 1
+    # oversubscribe CPUs to anticipate networking bottlenecks
+    Int P = cpu*2
 
     command <<<
         set -euxo pipefail
@@ -69,8 +71,9 @@ task samtools_slice_1000G_bam {
 
         cat << "EOF" > do1
         sample=$(basename "$1")
+        rm -f "$sample.final.cram.crai"
         outfn="$sample.~{range_name}.bam"
-        timeout "~{timeout}" samtools view -@ 4 -b \
+        timeout "~{timeout}" samtools view -b \
             -o "$outfn" \
             "https://s3.amazonaws.com/1000genomes/1000G_2504_high_coverage/data/$1.final.cram" \
             "~{range}"

@@ -29,9 +29,9 @@
     ],
     "range1KGP.ref_fasta": "https://s3.amazonaws.com/1000genomes/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa",
     "range1KGP.ref_fasta_idx": "https://s3.amazonaws.com/1000genomes/technical/reference/GRCh38_reference_genome/GRCh38_full_analysis_set_plus_decoy_hla.fa.fai",
-    "range1KGP.range": "chr12:111760000-111820000",
-    "range1KGP.range_name": "ALDH2",
+    "range1KGP.range": "chr17",
+    "range1KGP.range_name": "chr17",
     "range1KGP.cohort_name": "test26",
-    "range1KGP.DeepVariant_GLnexus.shards_per_sample": 4,
-    "range1KGP.slicer.timeout": "5m"
+    "range1KGP.DeepVariant_GLnexus.shards_per_sample": 8,
+    "range1KGP.slicer.timeout": "10m"
 }

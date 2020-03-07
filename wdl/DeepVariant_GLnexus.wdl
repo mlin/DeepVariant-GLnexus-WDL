@@ -41,7 +41,7 @@ workflow DeepVariant_GLnexus {
 
         # DeepVariant settings
         String model_type = "wgs"
-        Int shards_per_sample = 64
+        Int shards_per_sample = 32
         Int? gvcf_gq_binsize
 
         # GLnexus settings
