@@ -29,7 +29,9 @@ workflow range1KGP {
         input:
             ERR_slash_sample = ERR_slash_sample,
             range = range,
-            range_name = range_name
+            range_name = range_name,
+            ref_fasta = ref_fasta,
+            ref_fasta_idx = ref_fasta_idx
     }
 
     call dvglx.DeepVariant_GLnexus {
@@ -58,6 +60,9 @@ task samtools_slice_1000G_bam {
         String range
         String range_name
 
+        File ref_fasta
+        File ref_fasta_idx
+
         String timeout = "1h"
         Int cpu = 32
     }
@@ -73,7 +78,7 @@ task samtools_slice_1000G_bam {
         sample=$(basename "$1")
         rm -f "$sample.final.cram.crai"
         outfn="$sample.~{range_name}.bam"
-        timeout "~{timeout}" samtools view -b \
+        timeout "~{timeout}" samtools view -b -T "~{ref_fasta}" \
             -o "$outfn" \
             "https://s3.amazonaws.com/1000genomes/1000G_2504_high_coverage/data/$1.final.cram" \
             "~{range}"
