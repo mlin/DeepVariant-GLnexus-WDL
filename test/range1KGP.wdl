@@ -84,6 +84,7 @@ task samtools_slice_1000G_bam {
             "~{range}"
         echo "$outfn"
         EOF
+        >&2 cat do1
         cat "~{write_lines(ERR_slash_sample)}" | \
             parallel -t -k -P ~{P} --retries 3 --halt 2 \
             bash -eux -o pipefail do1 {} > slice_filenames
